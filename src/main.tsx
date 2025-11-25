@@ -1,22 +1,18 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
 
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App'
-import { store } from './app/store'
-import { Provider } from 'react-redux'
+import { Provider } from "react-redux";
+import { PersistGate } from "redux-persist/integration/react";
+import { store, persistor } from "./app/store";
 
-const container = document.getElementById('root')
-
-if (container) {
-  const root = createRoot(container)
-
-  root.render(
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
     <Provider store={store}>
-      <App />
-    </Provider>,
-  )
-} else {
-  throw new Error(
-    "Root element with ID 'root' was not found in the document. Ensure there is a corresponding HTML element with the ID 'root' in your HTML file.",
-  )
-}
+      <PersistGate loading={null} persistor={persistor}>
+        <App />
+      </PersistGate>
+    </Provider>
+  </React.StrictMode>
+);
