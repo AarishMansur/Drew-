@@ -1,19 +1,21 @@
+
 import { useEffect } from "react";
-import { supabase } from "../lib/supaBaseClient";
 import { useNavigate } from "react-router-dom";
-import { useAppDispatch } from "../app/store";
-import { setAuthState } from "../features/AuthSlice";
+import { useAppSelector } from "../app/store"; 
+
 
 export default function AuthCallback() {
   const navigate = useNavigate();
-  const dispatch = useAppDispatch();
+
+  const user = useAppSelector((s) => s.auth.user); 
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((_event, session) => {
-      dispatch(setAuthState({ session, user: session?.user ?? null }));
+
+    if (user) {
+
       navigate("/spaces", { replace: true });
-    });
-  }, []);
+    }
+  }, [user, navigate]); 
 
   return (
     <div className="text-white h-screen flex items-center justify-center">
