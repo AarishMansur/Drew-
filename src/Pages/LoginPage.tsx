@@ -15,7 +15,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: window.location.origin + "/spaces",
+        redirectTo: window.location.origin + "/auth/callback",
       },
     });
     if (error) setStatus(error.message);
@@ -27,7 +27,7 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: window.location.origin + "/spaces",
+        emailRedirectTo: window.location.origin + "/auth/callback",
       },
     });
     if (error) setStatus(error.message);
