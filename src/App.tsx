@@ -32,7 +32,8 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const user = useAppSelector((s) => s.auth.user);
+  const { user, loading } = useAppSelector((s) => s.auth);
+  if (loading) return null; 
   if (!user) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
