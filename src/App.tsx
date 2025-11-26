@@ -12,6 +12,8 @@ import { Hero } from "./Pages/Hero";
 function AuthLoader({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
   const loading = useAppSelector((s) => s.auth.loading);
+  if(!loading) console.log("Could not log in");
+  
 
   useEffect(() => {
     (async () => {
