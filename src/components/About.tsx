@@ -1,5 +1,5 @@
 import React from 'react';
-import videoAbout from "../assets/cursorful-video-1764065182704.mp4";
+import videoAbout from "../assets/cursorful-video-1764166445864.mp4";
 
 const About: React.FC = () => {
   return (
