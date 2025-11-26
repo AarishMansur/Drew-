@@ -1,38 +1,68 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { supabase } from "./lib/supaBaseClient";
-import { useNavigate } from "react-router-dom";
-import { useAppDispatch } from "./app/store";
+import { useAppDispatch, useAppSelector } from "./app/store";
 import { setAuthState } from "./features/AuthSlice";
+import AuthCallback from "./Pages/AuthCallBack";
 
-export default function AuthCallback() {
-  const navigate = useNavigate();
+import SpacesPage from "./Pages/SpacePage";
+import CanvasPage from "./Pages/CanvasPage";
+import { Hero } from "./Pages/Hero";
+
+function AuthLoader({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
+  const loading = useAppSelector((s) => s.auth.loading);
+  if(!loading) console.log("Could not log in");
+  
 
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase.auth.getSession();
-     if(error) console.log("Error :",error);
-     
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      dispatch(setAuthState({ session, user: session?.user ?? null }));
 
-      if (data.session) {
-        dispatch(setAuthState({ session: data.session, user: data.session.user }));
-        navigate("/spaces", { replace: true });
-        return;
-      }
-
-    
       supabase.auth.onAuthStateChange((_event, session) => {
-        if (session) {
-          dispatch(setAuthState({ session, user: session.user }));
-          navigate("/spaces", { replace: true });
-        }
+        dispatch(setAuthState({ session, user: session?.user ?? null }));
       });
     })();
-  }, []);
+  }, [dispatch]);
 
+  return <>{children}</>;
+}
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const user = useAppSelector((s) => s.auth.user);
+  if (!user) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+export default function App() {
   return (
-    <div className="text-white h-screen flex items-center justify-center">
-      Signing you in...
-    </div>
+    <BrowserRouter>
+      <AuthLoader>
+        <Routes>
+          <Route path="/" element={<Hero />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route
+            path="/spaces"
+            element={
+              <ProtectedRoute>
+                <SpacesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/spaces/:spaceId"
+            element={
+              <ProtectedRoute>
+                <CanvasPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthLoader>
+    </BrowserRouter>
   );
 }
