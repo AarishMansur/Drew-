@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { supabase } from "./lib/supaBaseClient";
 import { useAppDispatch, useAppSelector } from "./app/store";
 import { setAuthState } from "./features/AuthSlice";
+import AuthCallback from "./Pages/AuthCallBack";
 
 import SpacesPage from "./Pages/SpacePage";
 import CanvasPage from "./Pages/CanvasPage";
@@ -25,7 +26,6 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     })();
   }, [dispatch]);
 
-  if (loading) return <div className="flex h-screen items-center justify-center bg-white">Loading...</div>;
   return <>{children}</>;
 }
 
@@ -41,6 +41,7 @@ export default function App() {
       <AuthLoader>
         <Routes>
           <Route path="/" element={<Hero />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
           <Route
             path="/spaces"
             element={
