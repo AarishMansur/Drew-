@@ -82,7 +82,7 @@ export default function CanvasPage() {
     setSelectedId(null);
   };
 
-  // Fetch space name
+  
   useEffect(() => {
     if (!spaceId) return;
     const fetchSpace = async () => {
@@ -285,7 +285,7 @@ export default function CanvasPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col bg-white">
-      {/* Toolbar */}
+    
       <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
         <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-900 p-2 flex items-center gap-1">
           {buttons.map((b) => (
