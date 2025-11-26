@@ -1,7 +1,7 @@
 
 import { X,Mail,ChevronLeft } from 'lucide-react'
 import { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supaBaseClient';
 import {toast} from 'react-toastify'
 
 interface LoginProps {

@@ -1,10 +1,18 @@
 import { configureStore, combineReducers } from "@reduxjs/toolkit";
 import { useDispatch, useSelector, type TypedUseSelectorHook } from "react-redux";
 import storage from "redux-persist/lib/storage";
-import { persistReducer, persistStore } from "redux-persist";
-
+import {
+  persistStore,
+  persistReducer,
+  FLUSH,
+  REHYDRATE,
+  PAUSE,
+  PERSIST,
+  PURGE,
+  REGISTER,
+} from "redux-persist";
 import canvasReducer from "../features/CanvaSlice";
-import authReducer from "../features/CanvaSlice";
+import authReducer from "../features/AuthSlice";
 
 const rootReducer = combineReducers({
   canvas: canvasReducer,

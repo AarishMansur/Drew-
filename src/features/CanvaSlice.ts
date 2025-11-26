@@ -1,19 +1,24 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+
+export type shapeType = 'rect'  |'line' |'circle' |"arrow" |"text";
+
 export type Shape = {
   id: string;
   spaceId: string;
-  type: "rect"; // expand later
+  type: shapeType; 
   x: number;
   y: number;
   width: number;
   height: number;
   rotation: number;
+  points?:number[],
+  text?:string,
   props?: Record<string, any>;
 };
 
 type CanvasState = {
-  shapes: Record<string, Shape>; // id -> shape
+  shapes: Record<string, Shape>; 
 };
 
 const initialState: CanvasState = {
