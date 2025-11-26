@@ -10,19 +10,21 @@ import {
   Text,
   Transformer,
 } from "react-konva";
-
 import { useAppDispatch, useAppSelector } from "../app/store";
 import { setShapes, upsertShape, removeShape } from "../features/CanvaSlice";
 import { supabase } from "../lib/supaBaseClient";
 import type { Shape, shapeType } from "../features/CanvaSlice";
 import { gsap } from "gsap";
-import Toolbar from "../components/Toolbar";
+import { Square, Circle as CircleIcon, Minus, ArrowRight, Type, Trash2, ArrowLeft, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export default function CanvasPage() {
   const { spaceId } = useParams<{ spaceId: string }>();
+  const navigate = useNavigate();
 
   const [tool, setTool] = useState<shapeType>("rect");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [spaceName, setSpaceName] = useState<string>("");
 
   const dispatch = useAppDispatch();
   const shapes = Object.values(
@@ -35,9 +37,6 @@ export default function CanvasPage() {
 
   const handleSelect = (id: string) => () => setSelectedId(id);
 
-  // ----------------------------
-  // RESIZE
-  // ----------------------------
   const handleTransform = (id: string) => async (e: any) => {
     const node = e.target;
     const scaleX = node.scaleX();
@@ -60,7 +59,6 @@ export default function CanvasPage() {
     await supabase.from("shapes").update(update).eq("id", id);
   };
 
-
   const handleDrag = (id: string) => async (e: any) => {
     const node = e.target;
     await supabase
@@ -71,28 +69,33 @@ export default function CanvasPage() {
 
   const handleDragLine = (id: string) => async (e: any) => {
     const node = e.target;
-
     await supabase
       .from("shapes")
       .update({ x: node.x(), y: node.y() })
       .eq("id", id);
   };
 
-  // ----------------------------
-  // CLEAR CANVAS
-  // ----------------------------
   const clearCanvas = async () => {
     if (!spaceId) return;
-
     await supabase.from("shapes").delete().eq("space_id", spaceId);
-
     shapes.forEach((s) => dispatch(removeShape(s.id)));
     setSelectedId(null);
   };
 
-  // ----------------------------
-  // ENTRANCE ANIMATION
-  // ----------------------------
+  // Fetch space name
+  useEffect(() => {
+    if (!spaceId) return;
+    const fetchSpace = async () => {
+      const { data } = await supabase
+        .from("spaces")
+        .select("name")
+        .eq("id", spaceId)
+        .single();
+      if (data) setSpaceName(data.name);
+    };
+    fetchSpace();
+  }, [spaceId]);
+
   useEffect(() => {
     if (containerRef.current) {
       gsap.fromTo(
@@ -103,9 +106,6 @@ export default function CanvasPage() {
     }
   }, []);
 
-  // ----------------------------
-  // LOAD SHAPES + REALTIME
-  // ----------------------------
   useEffect(() => {
     if (!spaceId) return;
 
@@ -151,7 +151,6 @@ export default function CanvasPage() {
         (payload) => {
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
             const row: any = payload.new;
-
             dispatch(
               upsertShape({
                 id: row.id,
@@ -179,9 +178,6 @@ export default function CanvasPage() {
     };
   }, [spaceId, dispatch]);
 
-  // ----------------------------
-  // DELETE SELECTED ITEM
-  // ----------------------------
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if (e.key === "Delete" && selectedId) {
@@ -201,9 +197,6 @@ export default function CanvasPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedId]);
 
-  // ----------------------------
-  // TRANSFORMER
-  // ----------------------------
   useEffect(() => {
     if (!transformerRef.current || !layerRef.current) return;
 
@@ -211,12 +204,10 @@ export default function CanvasPage() {
     if (!stage) return;
 
     const node = stage.findOne(`#${selectedId}`);
-
     transformerRef.current.nodes(node ? [node] : []);
     transformerRef.current.getLayer()?.batchDraw();
   }, [selectedId, shapes]);
 
- 
   const handleCanvasClick = async (evt: any) => {
     if (!spaceId) return;
 
@@ -234,7 +225,7 @@ export default function CanvasPage() {
       x: pos.x,
       y: pos.y,
       rotation: 0,
-      props: { stroke: "#fff", fill: "#3b82f6" },
+      props: { stroke: "#000", fill: "#3b82f6" },
     };
 
     let shapeData: any = {};
@@ -246,17 +237,17 @@ export default function CanvasPage() {
       shapeData = { ...base, type: "circle", width: 80, height: 80 };
 
     if (tool === "line")
-      shapeData = { ...base, type: "line", points: [0, 0, 50, 0] };
+      shapeData = { ...base, type: "line", points: [0, 0, 100, 0] };
 
     if (tool === "arrow")
-      shapeData = { ...base, type: "arrow", points: [0, 0, 50, 0] };
+      shapeData = { ...base, type: "arrow", points: [0, 0, 100, 0] };
 
     if (tool === "text")
       shapeData = {
         ...base,
         type: "text",
-        text_value: "New Text",
-        props: { fontSize: 20, fill: "#fff" },
+        text_value: "Double-click to edit",
+        props: { fontSize: 20, fill: "#000" },
       };
 
     const { data } = await supabase
@@ -284,31 +275,86 @@ export default function CanvasPage() {
     );
   };
 
-  // ----------------------------
-  // RENDER SHAPES
-  // ----------------------------
-  return (
-    <div className="min-h-screen w-full flex flex-col bg-slate-950 text-white">
-      <header className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
-        <div>
-          <h1 className="text-sm font-semibold">Space: {spaceId}</h1>
-          <p className="text-xs text-slate-400">
-            Click anywhere to drop a shape. All changes are synced.
-          </p>
-        </div>
-        <Toolbar
-          tool={tool}
-          setTool={setTool}
-          clearCanvas={clearCanvas}
-        />
-      </header>
+  const buttons: { id: shapeType; label: string; icon: React.ReactNode }[] = [
+    { id: "rect", label: "Rectangle", icon: <Square className="w-4 h-4" /> },
+    { id: "circle", label: "Circle", icon: <CircleIcon className="w-4 h-4" /> },
+    { id: "line", label: "Line", icon: <Minus className="w-4 h-4" /> },
+    { id: "arrow", label: "Arrow", icon: <ArrowRight className="w-4 h-4" /> },
+    { id: "text", label: "Text", icon: <Type className="w-4 h-4" /> },
+  ];
 
-      <div ref={containerRef} className="flex-1">
+  return (
+    <div className="min-h-screen w-full flex flex-col bg-white">
+      {/* Toolbar */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+        <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-900 p-2 flex items-center gap-1">
+          {buttons.map((b) => (
+            <button
+              key={b.id}
+              onClick={() => setTool(b.id)}
+              className={`group relative px-4 py-3 rounded-xl transition-all duration-200 ${
+                tool === b.id 
+                  ? "bg-gray-900 text-white" 
+                  : "bg-white text-gray-700 hover:bg-gray-100"
+              }`}
+              title={b.label}
+            >
+              {b.icon}
+              <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                {b.label}
+              </span>
+            </button>
+          ))}
+
+          <div className="w-px h-8 bg-gray-300 mx-1" />
+
+          <button
+            onClick={clearCanvas}
+            className="px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all duration-200 group relative"
+            title="Clear Canvas"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              Clear Canvas
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Top Header */}
+      <div className="fixed top-4 left-4 z-40">
+        <button
+          onClick={() => navigate("/spaces")}
+          className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white border-2 border-gray-900 text-gray-900 font-semibold hover:bg-gray-50 transition-all duration-200 shadow-lg"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </button>
+      </div>
+
+      <div className="fixed top-4 right-4 z-40">
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border-2 border-gray-900 shadow-lg">
+          <Users className="w-4 h-4 text-gray-700" />
+          <span className="text-sm font-semibold text-gray-900 google-sans">
+            {spaceName || "Space"}
+          </span>
+        </div>
+      </div>
+
+      {/* Canvas */}
+      <div ref={containerRef} className="flex-1 bg-gray-50">
         <Stage
           width={window.innerWidth}
-          height={window.innerHeight - 48}
+          height={window.innerHeight}
           onMouseDown={handleCanvasClick}
-          className="bg-slate-900"
+          className="bg-white"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px)
+            `,
+            backgroundSize: '20px 20px'
+          }}
         >
           <Layer ref={layerRef}>
             {shapes.map((s) => {
@@ -325,6 +371,7 @@ export default function CanvasPage() {
                       rotation={s.rotation}
                       fill={s.props?.fill}
                       stroke={s.props?.stroke}
+                      strokeWidth={2}
                       draggable
                       onDragEnd={handleDrag(s.id)}
                       onClick={handleSelect(s.id)}
@@ -342,6 +389,7 @@ export default function CanvasPage() {
                       radius={(s.width ?? 80) / 2}
                       fill={s.props?.fill}
                       stroke={s.props?.stroke}
+                      strokeWidth={2}
                       draggable
                       onDragEnd={handleDrag(s.id)}
                       onClick={handleSelect(s.id)}
@@ -357,7 +405,7 @@ export default function CanvasPage() {
                       x={s.x}
                       y={s.y}
                       points={s.points ?? []}
-                      stroke={s.props?.stroke || "white"}
+                      stroke={s.props?.stroke || "#000"}
                       strokeWidth={3}
                       draggable
                       onClick={handleSelect(s.id)}
@@ -368,12 +416,12 @@ export default function CanvasPage() {
                 case "arrow":
                   return (
                     <Arrow
-                      id={s.id} 
+                      id={s.id}
                       key={s.id}
                       x={s.x}
                       y={s.y}
                       points={s.points ?? []}
-                      stroke={s.props?.stroke || "white"}
+                      stroke={s.props?.stroke || "#000"}
                       strokeWidth={3}
                       draggable
                       onClick={handleSelect(s.id)}
@@ -390,7 +438,7 @@ export default function CanvasPage() {
                       y={s.y}
                       text={s.text ?? ""}
                       fontSize={s.props?.fontSize || 18}
-                      fill={s.props?.fill || "white"}
+                      fill={s.props?.fill || "#000"}
                       draggable
                       onDragEnd={handleDrag(s.id)}
                       onClick={handleSelect(s.id)}
@@ -400,25 +448,23 @@ export default function CanvasPage() {
                         if (!stage) return;
 
                         const textPos = node.getAbsolutePosition();
-                        const stageRect =
-                          stage.container().getBoundingClientRect();
+                        const stageRect = stage.container().getBoundingClientRect();
 
                         const area = document.createElement("textarea");
                         area.value = s.text ?? "";
                         area.style.position = "absolute";
                         area.style.top = stageRect.top + textPos.y + "px";
                         area.style.left = stageRect.left + textPos.x + "px";
-                        area.style.fontSize =
-
-                          (s.props?.fontSize || 18) + "px";
-                        area.style.padding = "0px";
+                        area.style.fontSize = (s.props?.fontSize || 18) + "px";
+                        area.style.padding = "4px";
                         area.style.margin = "0px";
-                        area.style.border = "1px solid white";
-                        area.style.background = "black";
-                        area.style.color = "white";
+                        area.style.border = "2px solid #000";
+                        area.style.background = "white";
+                        area.style.color = "#000";
                         area.style.outline = "none";
                         area.style.resize = "none";
                         area.style.zIndex = "99999";
+                        area.style.borderRadius = "4px";
 
                         document.body.appendChild(area);
                         area.focus();

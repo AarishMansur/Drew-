@@ -4,9 +4,9 @@ import { supabase } from "./lib/supaBaseClient";
 import { useAppDispatch, useAppSelector } from "./app/store";
 import { setAuthState } from "./features/AuthSlice";
 
-import LoginPage from "./Pages/LoginPage";
 import SpacesPage from "./Pages/SpacePage";
 import CanvasPage from "./Pages/CanvasPage";
+import { Hero } from "./Pages/Hero";
 
 function AuthLoader({ children }: { children: React.ReactNode }) {
   const dispatch = useAppDispatch();
@@ -25,13 +25,13 @@ function AuthLoader({ children }: { children: React.ReactNode }) {
     })();
   }, [dispatch]);
 
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
+  if (loading) return <div className="flex h-screen items-center justify-center bg-white">Loading...</div>;
   return <>{children}</>;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const user = useAppSelector((s) => s.auth.user);
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -40,7 +40,7 @@ export default function App() {
     <BrowserRouter>
       <AuthLoader>
         <Routes>
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<Hero />} />
           <Route
             path="/spaces"
             element={
@@ -57,7 +57,7 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/spaces" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthLoader>
     </BrowserRouter>
