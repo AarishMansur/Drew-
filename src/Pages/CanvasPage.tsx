@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import {
   Stage,
   Layer,
@@ -16,8 +16,25 @@ import { setShapes, upsertShape, removeShape } from "../features/CanvaSlice";
 import { supabase } from "../lib/supaBaseClient";
 import type { Shape, shapeType } from "../features/CanvaSlice";
 import { gsap } from "gsap";
-import { Square, Circle as CircleIcon, Minus, ArrowRight, Type, Trash2, ArrowLeft, Users } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { ArrowLeft, Users } from "lucide-react";
+import { toast, ToastContainer } from "react-toastify";
+import Toolbar from "../components/Toolbar";
+
+function shapeFromRow(row: any): Shape {
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    type: row.type,
+    x: row.x,
+    y: row.y,
+    width: row.width,
+    height: row.height,
+    rotation: row.rotation,
+    props: row.props,
+    points: row.points,
+    text: row.text_value,
+  };
+}
 
 export default function CanvasPage() {
   const { spaceId } = useParams<{ spaceId: string }>();
@@ -26,64 +43,85 @@ export default function CanvasPage() {
   const [tool, setTool] = useState<shapeType>("rect");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [spaceName, setSpaceName] = useState<string>("");
+  const [stageSize, setStageSize] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 
   const dispatch = useAppDispatch();
-  const shapes = Object.values(
-    useAppSelector((s) => s.canvas.shapes)
-  ).filter((s) => s.spaceId === spaceId);
+  const shapesById = useAppSelector((s) => s.canvas.shapes);
+  const shapes = Object.values(shapesById).filter((s) => s.spaceId === spaceId);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transformerRef = useRef<any>(null);
   const layerRef = useRef<any>(null);
+  const shapesRef = useRef(shapesById);
+  const selectedIdRef = useRef(selectedId);
+
+  useEffect(() => {
+    shapesRef.current = shapesById;
+    selectedIdRef.current = selectedId;
+  });
 
   const handleSelect = (id: string) => () => setSelectedId(id);
+
+  const persistShape = async (id: string, patch: Partial<Shape>, row: Record<string, unknown>) => {
+    const current = shapesRef.current[id];
+    if (!current) return;
+    dispatch(upsertShape({ ...current, ...patch }));
+    const { error } = await supabase.from("shapes").update(row).eq("id", id);
+    if (error) {
+      dispatch(upsertShape(current));
+      toast.error(error.message || "Could not save shape");
+    }
+  };
 
   const handleTransform = (id: string) => async (e: any) => {
     const node = e.target;
     const scaleX = node.scaleX();
     const scaleY = node.scaleY();
 
-    const update: any = {
+    const patch: Partial<Shape> = {
       x: node.x(),
       y: node.y(),
       rotation: node.rotation(),
     };
+    const row: Record<string, unknown> = {
+      x: patch.x,
+      y: patch.y,
+      rotation: patch.rotation,
+    };
 
     if (typeof node.width === "function" && typeof node.height === "function") {
-      update.width = node.width() * scaleX;
-      update.height = node.height() * scaleY;
+      patch.width = node.width() * scaleX;
+      patch.height = node.height() * scaleY;
+      row.width = patch.width;
+      row.height = patch.height;
     }
 
     node.scaleX(1);
     node.scaleY(1);
 
-    await supabase.from("shapes").update(update).eq("id", id);
+    await persistShape(id, patch, row);
   };
 
   const handleDrag = (id: string) => async (e: any) => {
     const node = e.target;
-    await supabase
-      .from("shapes")
-      .update({ x: node.x(), y: node.y() })
-      .eq("id", id);
-  };
-
-  const handleDragLine = (id: string) => async (e: any) => {
-    const node = e.target;
-    await supabase
-      .from("shapes")
-      .update({ x: node.x(), y: node.y() })
-      .eq("id", id);
+    await persistShape(id, { x: node.x(), y: node.y() }, { x: node.x(), y: node.y() });
   };
 
   const clearCanvas = async () => {
     if (!spaceId) return;
-    await supabase.from("shapes").delete().eq("space_id", spaceId);
-    shapes.forEach((s) => dispatch(removeShape(s.id)));
+    const removed = Object.values(shapesRef.current).filter((s) => s.spaceId === spaceId);
+    removed.forEach((s) => dispatch(removeShape(s.id)));
     setSelectedId(null);
+    const { error } = await supabase.from("shapes").delete().eq("space_id", spaceId);
+    if (error) {
+      removed.forEach((s) => dispatch(upsertShape(s)));
+      toast.error(error.message || "Could not clear canvas");
+    }
   };
 
-  
   useEffect(() => {
     if (!spaceId) return;
     const fetchSpace = async () => {
@@ -108,6 +146,22 @@ export default function CanvasPage() {
   }, []);
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      setStageSize({
+        width: Math.max(rect.width, 1),
+        height: Math.max(rect.height, 1),
+      });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (!spaceId) return;
 
     const loadShapes = async () => {
@@ -116,25 +170,17 @@ export default function CanvasPage() {
         .select("*")
         .eq("space_id", spaceId);
 
-      if (!error && data) {
-        dispatch(
-          setShapes(
-            data.map((row: any) => ({
-              id: row.id,
-              spaceId: row.space_id,
-              type: row.type,
-              x: row.x,
-              y: row.y,
-              width: row.width,
-              height: row.height,
-              rotation: row.rotation,
-              props: row.props,
-              points: row.points,
-              text: row.text_value,
-            })) as Shape[]
-          )
-        );
+      if (error) {
+        toast.error(error.message || "Could not load shapes");
+        return;
       }
+
+      dispatch(
+        setShapes({
+          spaceId,
+          shapes: (data ?? []).map(shapeFromRow),
+        })
+      );
     };
 
     loadShapes();
@@ -151,24 +197,11 @@ export default function CanvasPage() {
         },
         (payload) => {
           if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
-            const row: any = payload.new;
-            dispatch(
-              upsertShape({
-                id: row.id,
-                spaceId: row.space_id,
-                type: row.type,
-                x: row.x,
-                y: row.y,
-                width: row.width,
-                height: row.height,
-                rotation: row.rotation,
-                props: row.props,
-                points: row.points,
-                text: row.text_value,
-              })
-            );
+            dispatch(upsertShape(shapeFromRow(payload.new)));
           } else if (payload.eventType === "DELETE") {
-            dispatch(removeShape(payload.old.id as string));
+            const id = payload.old.id as string;
+            dispatch(removeShape(id));
+            setSelectedId((current) => (current === id ? null : current));
           }
         }
       )
@@ -181,22 +214,28 @@ export default function CanvasPage() {
 
   useEffect(() => {
     const handleKeyDown = async (e: KeyboardEvent) => {
-      if (e.key === "Delete" && selectedId) {
-        const { error } = await supabase
-          .from("shapes")
-          .delete()
-          .eq("id", selectedId);
+      if (e.key !== "Delete") return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
 
-        if (!error) {
-          dispatch(removeShape(selectedId));
-          setSelectedId(null);
-        }
+      const id = selectedIdRef.current;
+      if (!id) return;
+
+      const current = shapesRef.current[id];
+      dispatch(removeShape(id));
+      setSelectedId(null);
+
+      const { error } = await supabase.from("shapes").delete().eq("id", id);
+      if (error) {
+        if (current) dispatch(upsertShape(current));
+        setSelectedId(id);
+        toast.error(error.message || "Could not delete shape");
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedId]);
+  }, [dispatch]);
 
   useEffect(() => {
     if (!transformerRef.current || !layerRef.current) return;
@@ -221,6 +260,7 @@ export default function CanvasPage() {
     const pos = stage.getPointerPosition();
     if (!pos) return;
 
+    const tempId = crypto.randomUUID();
     const base = {
       space_id: spaceId,
       x: pos.x,
@@ -251,78 +291,46 @@ export default function CanvasPage() {
         props: { fontSize: 20, fill: "#000" },
       };
 
-    const { data } = await supabase
-      .from("shapes")
-      .insert([shapeData])
-      .select("*")
-      .single();
+    const local: Shape = {
+      id: tempId,
+      spaceId,
+      type: shapeData.type,
+      x: shapeData.x,
+      y: shapeData.y,
+      width: shapeData.width ?? 0,
+      height: shapeData.height ?? 0,
+      rotation: 0,
+      props: shapeData.props,
+      points: shapeData.points,
+      text: shapeData.text_value,
+    };
 
-    if (!data) return;
+    dispatch(upsertShape(local));
 
-    dispatch(
-      upsertShape({
-        id: data.id,
-        spaceId: data.space_id,
-        type: data.type,
-        x: data.x,
-        y: data.y,
-        width: data.width,
-        height: data.height,
-        rotation: data.rotation,
-        props: data.props,
-        points: data.points,
-        text: data.text_value,
-      })
-    );
+    const { data, error } = await supabase.from("shapes").insert([shapeData]).select("*").single();
+    if (error || !data) {
+      dispatch(removeShape(tempId));
+      toast.error(error?.message || "Could not create shape");
+      return;
+    }
+    dispatch(upsertShape(shapeFromRow(data)));
+    dispatch(removeShape(tempId));
   };
 
-  const buttons: { id: shapeType; label: string; icon: React.ReactNode }[] = [
-    { id: "rect", label: "Rectangle", icon: <Square className="w-4 h-4" /> },
-    { id: "circle", label: "Circle", icon: <CircleIcon className="w-4 h-4" /> },
-    { id: "line", label: "Line", icon: <Minus className="w-4 h-4" /> },
-    { id: "arrow", label: "Arrow", icon: <ArrowRight className="w-4 h-4" /> },
-    { id: "text", label: "Text", icon: <Type className="w-4 h-4" /> },
-  ];
-
   return (
-    <div className="min-h-screen w-full flex flex-col bg-white">
-    
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-        <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-900 p-2 flex items-center gap-1">
-          {buttons.map((b) => (
-            <button
-              key={b.id}
-              onClick={() => setTool(b.id)}
-              className={`group relative px-4 py-3 rounded-xl transition-all duration-200 ${
-                tool === b.id 
-                  ? "bg-gray-900 text-white" 
-                  : "bg-white text-gray-700 hover:bg-gray-100"
-              }`}
-              title={b.label}
-            >
-              {b.icon}
-              <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                {b.label}
-              </span>
-            </button>
-          ))}
+    <div className="h-screen w-full flex flex-col bg-white">
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop
+        closeOnClick
+        pauseOnHover
+        draggable
+        theme="dark"
+      />
+      <Toolbar tool={tool} setTool={setTool} clearCanvas={clearCanvas} />
 
-          <div className="w-px h-8 bg-gray-300 mx-1" />
-
-          <button
-            onClick={clearCanvas}
-            className="px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all duration-200 group relative"
-            title="Clear Canvas"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-              Clear Canvas
-            </span>
-          </button>
-        </div>
-      </div>
-
-      {/* Top Header */}
       <div className="fixed top-4 left-4 z-40">
         <button
           onClick={() => navigate("/spaces")}
@@ -342,11 +350,10 @@ export default function CanvasPage() {
         </div>
       </div>
 
-      {/* Canvas */}
-      <div ref={containerRef} className="flex-1 bg-gray-50">
+      <div ref={containerRef} className="flex-1 min-h-0 bg-gray-50">
         <Stage
-          width={window.innerWidth}
-          height={window.innerHeight}
+          width={stageSize.width}
+          height={stageSize.height}
           onMouseDown={handleCanvasClick}
           className="bg-white"
           style={{
@@ -354,7 +361,7 @@ export default function CanvasPage() {
               linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
               linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px)
             `,
-            backgroundSize: '20px 20px'
+            backgroundSize: "20px 20px",
           }}
         >
           <Layer ref={layerRef}>
@@ -410,7 +417,7 @@ export default function CanvasPage() {
                       strokeWidth={3}
                       draggable
                       onClick={handleSelect(s.id)}
-                      onDragEnd={handleDragLine(s.id)}
+                      onDragEnd={handleDrag(s.id)}
                     />
                   );
 
@@ -426,7 +433,7 @@ export default function CanvasPage() {
                       strokeWidth={3}
                       draggable
                       onClick={handleSelect(s.id)}
-                      onDragEnd={handleDragLine(s.id)}
+                      onDragEnd={handleDrag(s.id)}
                     />
                   );
 
@@ -474,18 +481,7 @@ export default function CanvasPage() {
                         area.addEventListener("blur", async () => {
                           const newText = area.value;
                           document.body.removeChild(area);
-
-                          await supabase
-                            .from("shapes")
-                            .update({ text_value: newText })
-                            .eq("id", s.id);
-
-                          dispatch(
-                            upsertShape({
-                              ...s,
-                              text: newText,
-                            })
-                          );
+                          await persistShape(s.id, { text: newText }, { text_value: newText });
                         });
                       }}
                     />
