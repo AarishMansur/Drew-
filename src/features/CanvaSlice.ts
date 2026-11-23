@@ -29,9 +29,15 @@ const canvasSlice = createSlice({
   name: "canvas",
   initialState,
   reducers: {
-    setShapes(state, action: PayloadAction<Shape[]>) {
-      state.shapes = {};
-      for (const s of action.payload) state.shapes[s.id] = s;
+    setShapes(state, action: PayloadAction<{ spaceId: string; shapes: Shape[] }>) {
+      for (const id of Object.keys(state.shapes)) {
+        if (state.shapes[id].spaceId === action.payload.spaceId) {
+          delete state.shapes[id];
+        }
+      }
+      for (const shape of action.payload.shapes) {
+        state.shapes[shape.id] = shape;
+      }
     },
     upsertShape(state, action: PayloadAction<Shape>) {
       state.shapes[action.payload.id] = action.payload;
