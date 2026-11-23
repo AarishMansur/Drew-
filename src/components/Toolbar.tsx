@@ -1,14 +1,48 @@
-import { Square, Circle, Minus, ArrowRight, Type, Trash2 } from 'lucide-react';
+import type { ReactNode } from "react";
+import {
+  Square,
+  Circle,
+  Minus,
+  ArrowRight,
+  Type,
+  Trash2,
+  Hand,
+  Undo2,
+  Redo2,
+  Copy,
+  Download,
+} from "lucide-react";
 import type { shapeType } from "../features/CanvaSlice";
 
-interface ToolbarProps {
-  tool: shapeType;
-  setTool: React.Dispatch<React.SetStateAction<shapeType>>;
-  clearCanvas: () => void;
-}
+export type CanvasTool = shapeType | "pan";
 
-export default function Toolbar({ tool, setTool, clearCanvas }: ToolbarProps) {
-  const buttons: { id: shapeType; label: string; icon: React.ReactNode }[] = [
+type ToolbarProps = {
+  tool: CanvasTool;
+  setTool: (tool: CanvasTool) => void;
+  clearCanvas: () => void;
+  undo: () => void;
+  redo: () => void;
+  duplicate: () => void;
+  exportPng: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  canDuplicate: boolean;
+};
+
+export default function Toolbar({
+  tool,
+  setTool,
+  clearCanvas,
+  undo,
+  redo,
+  duplicate,
+  exportPng,
+  canUndo,
+  canRedo,
+  canDuplicate,
+}: ToolbarProps) {
+  const buttons: { id: CanvasTool; label: string; icon: ReactNode }[] = [
+    { id: "pan", label: "Pan", icon: <Hand className="w-4 h-4" /> },
     { id: "rect", label: "Rectangle", icon: <Square className="w-4 h-4" /> },
     { id: "circle", label: "Circle", icon: <Circle className="w-4 h-4" /> },
     { id: "line", label: "Line", icon: <Minus className="w-4 h-4" /> },
@@ -17,16 +51,14 @@ export default function Toolbar({ tool, setTool, clearCanvas }: ToolbarProps) {
   ];
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-900 p-2 flex items-center gap-1">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-[calc(100vw-2rem)]">
+      <div className="bg-white rounded-2xl shadow-2xl border-2 border-gray-900 p-2 flex items-center gap-1 flex-wrap justify-center">
         {buttons.map((b) => (
           <button
             key={b.id}
             onClick={() => setTool(b.id)}
             className={`group relative px-4 py-3 rounded-xl transition-all duration-200 ${
-              tool === b.id 
-                ? "bg-gray-900 text-white" 
-                : "bg-white text-gray-700 hover:bg-gray-100"
+              tool === b.id ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-100"
             }`}
             title={b.label}
           >
@@ -36,6 +68,21 @@ export default function Toolbar({ tool, setTool, clearCanvas }: ToolbarProps) {
             </span>
           </button>
         ))}
+
+        <div className="w-px h-8 bg-gray-300 mx-1" />
+
+        <IconButton label="Undo" onClick={undo} disabled={!canUndo}>
+          <Undo2 className="w-4 h-4" />
+        </IconButton>
+        <IconButton label="Redo" onClick={redo} disabled={!canRedo}>
+          <Redo2 className="w-4 h-4" />
+        </IconButton>
+        <IconButton label="Duplicate" onClick={duplicate} disabled={!canDuplicate}>
+          <Copy className="w-4 h-4" />
+        </IconButton>
+        <IconButton label="Export PNG" onClick={exportPng}>
+          <Download className="w-4 h-4" />
+        </IconButton>
 
         <div className="w-px h-8 bg-gray-300 mx-1" />
 
@@ -51,5 +98,32 @@ export default function Toolbar({ tool, setTool, clearCanvas }: ToolbarProps) {
         </button>
       </div>
     </div>
+  );
+}
+
+function IconButton({
+  label,
+  onClick,
+  disabled,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      className="group relative px-4 py-3 rounded-xl text-gray-700 hover:bg-gray-100 disabled:opacity-40 disabled:hover:bg-white"
+    >
+      {children}
+      <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+        {label}
+      </span>
+    </button>
   );
 }
