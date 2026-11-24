@@ -1,8 +1,8 @@
 function Footer() {
     return (
       <>
-        <section className="w-full bg-white flex flex-col items-center justify-center p-12 text-center">
-          <h2 className="text-4xl font-bold mb-4 text-black google-sans">Build. Draw. Iterate.</h2>
+        <section className="w-full bg-white flex flex-col items-center justify-center px-6 py-10 text-center">
+          <h2 className="text-2xl md:text-3xl font-bold mb-3 text-black google-sans">Build. Draw. Iterate.</h2>
           <p className="max-w-md text-gray-600 mb-6">
             Your ideas stay in your spaces. Draw, edit, and collaborate without distractions.
           </p>

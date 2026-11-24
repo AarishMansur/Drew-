@@ -64,10 +64,10 @@ export const Hero: React.FC = () => {
       if (!containerRef.current || !iconsContainerRef.current || !headerRef.current) return;
 
       const isMobile = window.innerWidth < 768;
-      const baseTargetHeight = isMobile ? 30 : 60;
-      
+      const baseTargetHeight = isMobile ? 28 : 44;
+
       const firstIcon = iconRefs.current[0];
-      const initialHeight = firstIcon ? firstIcon.getBoundingClientRect().height : (isMobile ? 40 : 150);
+      const initialHeight = firstIcon ? firstIcon.getBoundingClientRect().height : (isMobile ? 40 : 80);
       
       const targetScale = baseTargetHeight / initialHeight;
       
@@ -97,9 +97,9 @@ export const Hero: React.FC = () => {
       const trigger = ScrollTrigger.create({
         trigger: containerRef.current,
         start: "top top",
-        end: "+=3500",
+        end: "+=2200",
         pin: true,
-        scrub: 1,
+        scrub: true,
         pinSpacing: true,
         onUpdate: (self) => {
           const progress = self.progress;
@@ -315,10 +315,10 @@ export const Hero: React.FC = () => {
         
         <div ref={headerRef} className="absolute inset-0 flex flex-col items-center justify-center z-20 px-4 pointer-events-none">
           <div className="text-center pointer-events-auto">
-              <h1 className="text-6xl md:text-9xl font-bold text-gray-900 mb-4 tracking-tighter leading-none google-sans">
+              <h1 className="text-5xl md:text-7xl font-bold text-gray-900 mb-3 tracking-tighter leading-none google-sans">
                 Drew
               </h1>
-              <p className="text-xl md:text-2xl text-gray-500 font-medium mb-8">
+              <p className="text-base md:text-lg text-gray-500 font-medium mb-6">
                 Shape your idea into an architecture
               </p>
               <button 
@@ -331,7 +331,7 @@ export const Hero: React.FC = () => {
         </div>
 
         <div className="relative z-10 max-w-5xl px-4 md:px-8 text-center w-full">
-          <div className="text-4xl md:text-7xl lg:text-8xl font-bold text-gray-900 flex flex-wrap justify-center items-center gap-x-2 md:gap-x-4 gap-y-1 md:gap-y-2" style={{ lineHeight: '1.2' }}>
+          <div className="text-3xl md:text-5xl lg:text-6xl font-bold text-gray-900 flex flex-wrap justify-center items-center gap-x-2 md:gap-x-3 gap-y-1" style={{ lineHeight: '1.2' }}>
             {CONTENT.map((item, index) => {
               if (item.type === 'text') {
                 const textIndex = CONTENT.slice(0, index).filter(i => i.type === 'text').length;
@@ -351,8 +351,8 @@ export const Hero: React.FC = () => {
                     ref={el => { placeholderRefs.current[item.id] = el; }}
                     className="inline-block bg-transparent"
                     style={{
-                      height: 'clamp(30px, 5vw, 60px)',
-                      width: `calc(clamp(30px, 5vw, 60px) * ${item.aspect})`,
+                      height: 'clamp(24px, 3.5vw, 44px)',
+                      width: `calc(clamp(24px, 3.5vw, 44px) * ${item.aspect})`,
                       verticalAlign: 'middle'
                     }}
                   />
@@ -372,8 +372,8 @@ export const Hero: React.FC = () => {
               ref={el => { iconRefs.current[i] = el; }}
               className={`relative shadow-lg ${(item as any).color}`}
               style={{
-                 height: 'clamp(25px, 15vw, 150px)', 
-                 width: `calc(clamp(25px, 15vw, 150px) * ${(item as any).aspect})`,
+                 height: 'clamp(40px, 7vw, 80px)',
+                 width: `calc(clamp(40px, 7vw, 80px) * ${(item as any).aspect})`,
                  borderRadius: (item as any).shape === 'circle' ? '9999px' : ((item as any).shape === 'rectangle' ? '12px' : '4px')
               }}
             />
