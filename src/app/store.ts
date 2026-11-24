@@ -16,7 +16,8 @@ const rootReducer = combineReducers({
 const persistConfig = {
   key: "root",
   storage,
-  whitelist: ["canvas"], 
+  whitelist: ["canvas"],
+  throttle: 1000,
 };
 
 const persistedReducer = persistReducer(persistConfig, rootReducer);

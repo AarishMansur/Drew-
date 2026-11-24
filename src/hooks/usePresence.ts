@@ -18,6 +18,7 @@ export function usePresence({ spaceId, user, enabled, onRemoteDrag }: Options) {
   const [cursors, setCursors] = useState<Record<string, LiveCursor>>({});
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const cursorAt = useRef(0);
+  const dragAt = useRef(0);
   const dragHandler = useRef(onRemoteDrag);
   const userRef = useRef(user);
 
@@ -98,6 +99,9 @@ export function usePresence({ spaceId, user, enabled, onRemoteDrag }: Options) {
   const publishDrag = (id: string, x: number, y: number) => {
     const me = userRef.current;
     if (!me) return;
+    const now = performance.now();
+    if (now - dragAt.current < 40) return;
+    dragAt.current = now;
     void channelRef.current?.send({
       type: "broadcast",
       event: "drag",

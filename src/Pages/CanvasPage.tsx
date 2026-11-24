@@ -9,28 +9,22 @@ import DrawingStage from "../components/DrawingStage";
 import Inspector from "../components/Inspector";
 import Toolbar, { type CanvasTool } from "../components/Toolbar";
 import type { Shape } from "../features/CanvaSlice";
-import { GRID, connectorPoints, snap } from "../features/canvasGeometry";
+import { GRID } from "../features/canvasGeometry";
 import { usePresence } from "../hooks/usePresence";
 import { useSpaceShapes } from "../hooks/useSpaceShapes";
 import { supabase } from "../lib/supaBaseClient";
 import { canEditRole, isMissingRelation, type SpaceRole } from "../lib/sharing";
-
-function canvasPointer(stage: any) {
-  const pointer = stage.getPointerPosition();
-  if (!pointer) return null;
-  const transform = stage.getAbsoluteTransform().copy();
-  transform.invert();
-  return transform.point(pointer);
-}
 
 export default function CanvasPage() {
   const { spaceId } = useParams<{ spaceId: string }>();
   const navigate = useNavigate();
   const user = useAppSelector((s) => s.auth.user);
 
-  const [tool, setTool] = useState<CanvasTool>("rect");
+  const [tool, setTool] = useState<CanvasTool>("select");
+  const [locked, setLocked] = useState(false);
+  const [spacePan, setSpacePan] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [spaceName, setSpaceName] = useState("");
   const [stageSize, setStageSize] = useState({
     width: window.innerWidth,
@@ -45,6 +39,7 @@ export default function CanvasPage() {
   const stageRef = useRef<any>(null);
   const selectedIdRef = useRef(selectedId);
   const spaceNameRef = useRef(spaceName);
+  const lockedRef = useRef(locked);
 
   const board = useSpaceShapes({
     spaceId,
@@ -52,11 +47,9 @@ export default function CanvasPage() {
     canEdit,
     onShapeRemoved: (id) => {
       setSelectedId((current) => (current === id ? null : current));
-      setConnectFrom((current) => (current === id ? null : current));
     },
     onCleared: () => {
       setSelectedId(null);
-      setConnectFrom(null);
     },
   });
 
@@ -70,6 +63,7 @@ export default function CanvasPage() {
   useEffect(() => {
     selectedIdRef.current = selectedId;
     spaceNameRef.current = spaceName;
+    lockedRef.current = locked;
   });
 
   useEffect(() => {
@@ -95,7 +89,10 @@ export default function CanvasPage() {
       }
       const nextRole = data.role as SpaceRole;
       setRole(nextRole);
-      if (nextRole === "viewer") setTool("pan");
+      if (nextRole === "viewer") {
+        setTool("pan");
+        setLocked(false);
+      }
       const space = data.spaces as { name?: string } | { name?: string }[] | null;
       const record = Array.isArray(space) ? space[0] : space;
       if (record?.name) setSpaceName(record.name);
@@ -170,6 +167,17 @@ export default function CanvasPage() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (!event.repeat) setSpacePan(true);
+        return;
+      }
+      if (event.key === "Escape") {
+        setSelectedId(null);
+        setLocked(false);
+        if (canEdit) setTool("select");
+        return;
+      }
       if (!canEdit) return;
       const meta = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
@@ -188,6 +196,23 @@ export default function CanvasPage() {
         event.preventDefault();
         void duplicate();
         return;
+      }
+      if (!meta && !event.altKey) {
+        const shortcuts: Partial<Record<string, CanvasTool>> = {
+          v: "select",
+          h: "pan",
+          r: "rect",
+          o: "circle",
+          l: "line",
+          a: "arrow",
+          t: "text",
+        };
+        const nextTool = shortcuts[key];
+        if (nextTool) {
+          setTool(nextTool);
+          setLocked(false);
+          return;
+        }
       }
       if (event.key === "Delete") {
         const id = selectedIdRef.current;
@@ -209,8 +234,15 @@ export default function CanvasPage() {
         nudge(id, dx, dy);
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.code === "Space") setSpacePan(false);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+    };
   });
 
   const exportPng = () => {
@@ -238,80 +270,27 @@ export default function CanvasPage() {
     });
   };
 
-  const handleCanvasClick = async (event: any) => {
-    if (!spaceId || tool === "pan" || !canEdit) return;
-    const stage = event.target.getStage();
-    if (!stage || event.target !== stage) return;
-    const pos = canvasPointer(stage);
-    if (!pos) return;
-    if (tool === "arrow") setConnectFrom(null);
-
-    const x = snap(pos.x);
-    const y = snap(pos.y);
-    const base: Shape = {
-      id: "",
-      spaceId,
-      type: tool,
-      x,
-      y,
-      width: 0,
-      height: 0,
-      rotation: 0,
-      props: { stroke: "#000", fill: "#3b82f6" },
-    };
-    if (tool === "rect") {
-      base.width = 120;
-      base.height = 70;
-    } else if (tool === "circle") {
-      base.width = 80;
-      base.height = 80;
-    } else if (tool === "line") {
-      base.points = [0, 0, 100, 0];
-    } else if (tool === "arrow") {
-      base.points = [0, 0, 100, 0];
-      base.props = { stroke: "#000", fill: "#000" };
-    } else if (tool === "text") {
-      base.text = "Double-click to edit";
-      base.props = { fontSize: 20, fill: "#000" };
-    }
-    const saved = await board.insertShape(base, false, true);
-    if (saved) setSelectedId(saved.id);
-  };
-
-  const onShapeClick = (id: string, event: any) => {
-    event.cancelBubble = true;
-    if (tool === "pan" || !canEdit) return;
-    if (tool === "arrow") {
-      if (!connectFrom || connectFrom === id) {
-        setConnectFrom(id);
-        setSelectedId(id);
-        return;
-      }
-      const from = board.getShape(connectFrom);
-      const to = board.getShape(id);
-      setConnectFrom(null);
-      setSelectedId(id);
-      if (!from || !to || !spaceId) return;
-      void board.insertShape(
-        {
-          ...from,
-          spaceId,
-          type: "arrow",
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
-          rotation: 0,
-          points: connectorPoints(from, to),
-          text: undefined,
-          props: { stroke: "#000", fill: "#000", fromId: from.id, toId: to.id },
-        },
-        false,
-        true
-      );
+  const pickTool = (next: CanvasTool) => {
+    if (!canEdit && next !== "pan") return;
+    if (next === tool && next !== "select" && next !== "pan") {
+      setLocked((value) => !value);
       return;
     }
-    setSelectedId(id);
+    setTool(next);
+    setLocked(false);
+  };
+
+  const createShape = (partial: Omit<Shape, "id" | "spaceId">) => {
+    if (!spaceId) return;
+    void board.insertShape({ ...partial, id: "", spaceId }, false, true).then((saved) => {
+      if (!saved) return;
+      setSelectedId(saved.id);
+      if (saved.type === "text") setEditingId(saved.id);
+    });
+  };
+
+  const endGesture = () => {
+    if (!lockedRef.current) setTool("select");
   };
 
   const selectedShape = selectedId ? board.shapesById[selectedId] : undefined;
@@ -348,10 +327,8 @@ export default function CanvasPage() {
       />
       <Toolbar
         tool={tool}
-        setTool={(next) => {
-          setTool(next);
-          if (next !== "arrow") setConnectFrom(null);
-        }}
+        locked={locked}
+        onPick={pickTool}
         clearCanvas={() => void board.clearSpace()}
         undo={() => void board.undo()}
         redo={() => void board.redo()}
@@ -391,24 +368,25 @@ export default function CanvasPage() {
           width={stageSize.width}
           height={stageSize.height}
           viewport={viewport}
-          pan={tool === "pan"}
-          draggable={tool !== "pan" && canEdit}
+          tool={tool}
+          pan={tool === "pan" || spacePan}
+          canEdit={canEdit}
           shapes={board.shapes}
           shapesById={board.shapesById}
           shapesRef={board.shapesRef}
           selectedId={selectedId}
+          editingId={editingId}
           cursors={presence.cursors}
           onPanEnd={(x, y) => setViewport((current) => ({ ...current, x, y }))}
           onWheel={handleWheel}
-          onMouseDown={handleCanvasClick}
           onCursor={presence.publishCursor}
+          onSelect={setSelectedId}
+          onCreate={createShape}
+          onGestureEnd={endGesture}
+          onEditingDone={() => setEditingId(null)}
           onDragStart={board.beginGesture}
-          onDragMove={(id, x, y) => {
-            board.previewMove(id, x, y);
-            presence.publishDrag(id, x, y);
-          }}
+          onDragMove={presence.publishDrag}
           onDragEnd={(id, x, y) => void board.commitMove(id, x, y)}
-          onShapeClick={onShapeClick}
           onPersist={(id, patch, row) => void board.persistShape(id, patch, row)}
         />
       </div>
@@ -421,9 +399,9 @@ export default function CanvasPage() {
           onBack={() => changeZ(-1)}
         />
       )}
-      {connectFrom && (
+      {locked && tool !== "select" && tool !== "pan" && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-4 py-2 bg-gray-900 text-white rounded-xl text-sm">
-          Click another shape to connect
+          Tool stays on until you unlock it
         </div>
       )}
       <div className="fixed bottom-4 right-4 z-40 px-3 py-2 bg-white border-2 border-gray-900 rounded-xl text-xs font-semibold">
