@@ -161,7 +161,7 @@ end $$;
 
 drop policy if exists drew_spaces_select on public.spaces;
 create policy drew_spaces_select on public.spaces
-for select using (public.is_space_member(id));
+for select using (owner_id = auth.uid() or public.is_space_member(id));
 
 drop policy if exists drew_spaces_insert on public.spaces;
 create policy drew_spaces_insert on public.spaces

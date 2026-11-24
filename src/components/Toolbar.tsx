@@ -11,14 +11,17 @@ import {
   Redo2,
   Copy,
   Download,
+  MousePointer2,
+  Lock,
 } from "lucide-react";
 import type { shapeType } from "../features/CanvaSlice";
 
-export type CanvasTool = shapeType | "pan";
+export type CanvasTool = shapeType | "select" | "pan";
 
 type ToolbarProps = {
   tool: CanvasTool;
-  setTool: (tool: CanvasTool) => void;
+  locked: boolean;
+  onPick: (tool: CanvasTool) => void;
   clearCanvas: () => void;
   undo: () => void;
   redo: () => void;
@@ -32,7 +35,8 @@ type ToolbarProps = {
 
 export default function Toolbar({
   tool,
-  setTool,
+  locked,
+  onPick,
   clearCanvas,
   undo,
   redo,
@@ -44,11 +48,12 @@ export default function Toolbar({
   canEdit,
 }: ToolbarProps) {
   const buttons: { id: CanvasTool; label: string; icon: ReactNode }[] = [
+    { id: "select", label: "Select", icon: <MousePointer2 className="w-4 h-4" /> },
     { id: "pan", label: "Pan", icon: <Hand className="w-4 h-4" /> },
     { id: "rect", label: "Rectangle", icon: <Square className="w-4 h-4" /> },
     { id: "circle", label: "Circle", icon: <Circle className="w-4 h-4" /> },
-    { id: "line", label: "Line", icon: <Minus className="w-4 h-4" /> },
     { id: "arrow", label: "Arrow", icon: <ArrowRight className="w-4 h-4" /> },
+    { id: "line", label: "Line", icon: <Minus className="w-4 h-4" /> },
     { id: "text", label: "Text", icon: <Type className="w-4 h-4" /> },
   ];
 
@@ -58,14 +63,21 @@ export default function Toolbar({
         {buttons.map((b) => (
           <button
             key={b.id}
-            onClick={() => setTool(b.id)}
+            onClick={() => onPick(b.id)}
             className={`group relative px-4 py-3 rounded-xl transition-all duration-200 disabled:opacity-40 ${
               tool === b.id ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-100"
             }`}
-            title={b.label}
+            title={
+              locked && tool === b.id
+                ? `${b.label} stays on. Click again to unlock`
+                : tool === b.id && b.id !== "select" && b.id !== "pan"
+                  ? `${b.label}. Click again to keep drawing`
+                  : b.label
+            }
             disabled={!canEdit && b.id !== "pan"}
           >
             {b.icon}
+            {locked && tool === b.id && <Lock className="absolute top-1 right-1 w-3 h-3" />}
             <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
               {b.label}
             </span>
