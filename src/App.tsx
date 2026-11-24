@@ -9,6 +9,7 @@ import SpacesPage from "./Pages/SpacePage";
 import CanvasPage from "./Pages/CanvasPage";
 import { Hero } from "./Pages/Hero";
 import InvitePage from "./Pages/InvitePage";
+import SmoothScroll from "./components/SmoothScroll";
 import { rememberInvite } from "./lib/sharing";
 
 function AuthLoader({ children }: { children: React.ReactNode }) {
@@ -49,6 +50,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthLoader>
+        <SmoothScroll />
         <Routes>
           <Route path="/" element={<Hero />} />
           <Route path="/auth/callback" element={<AuthCallback />} />
