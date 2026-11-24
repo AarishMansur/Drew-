@@ -10,6 +10,7 @@ import {
   Arrow,
   Text,
   Transformer,
+  Group,
 } from "react-konva";
 import { useAppDispatch, useAppSelector } from "../app/store";
 import { setShapes, upsertShape, removeShape } from "../features/CanvaSlice";
@@ -27,6 +28,7 @@ import {
   isConnectedArrow,
   snap,
 } from "../features/canvasGeometry";
+import { canEditRole, colorFor, displayName, isMissingRelation, type SpaceRole } from "../lib/sharing";
 
 function shapeFromRow(row: any): Shape {
   return {
@@ -41,6 +43,7 @@ function shapeFromRow(row: any): Shape {
     props: row.props,
     points: row.points,
     text: row.text_value,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -88,6 +91,19 @@ function canvasPointer(stage: any) {
   return transform.point(pointer);
 }
 
+async function saveShapeUpdate(id: string, row: Record<string, unknown>, guard?: string) {
+  let query = supabase.from("shapes").update(row).eq("id", id);
+  if (guard) query = query.eq("updated_at", guard);
+  const { data, error } = await query.select("*").maybeSingle();
+  if (error) return { error };
+  if (!data) {
+    const fresh = await supabase.from("shapes").select("*").eq("id", id).maybeSingle();
+    if (fresh.error) return { error: fresh.error };
+    return { conflict: fresh.data ? shapeFromRow(fresh.data) : null };
+  }
+  return { saved: shapeFromRow(data) };
+}
+
 export default function CanvasPage() {
   const { spaceId } = useParams<{ spaceId: string }>();
   const navigate = useNavigate();
@@ -103,8 +119,13 @@ export default function CanvasPage() {
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [role, setRole] = useState<SpaceRole | "none" | "loading">("loading");
+  const [peers, setPeers] = useState<{ id: string; name: string; color: string }[]>([]);
+  const [cursors, setCursors] = useState<Record<string, { x: number; y: number; name: string; color: string }>>({});
 
   const dispatch = useAppDispatch();
+  const user = useAppSelector((s) => s.auth.user);
+  const canEdit = canEditRole(role);
   const shapesById = useAppSelector((s) => s.canvas.shapes);
   const shapes = Object.values(shapesById)
     .filter((s) => s.spaceId === spaceId)
@@ -119,11 +140,15 @@ export default function CanvasPage() {
   const undoStack = useRef<HistoryCmd[]>([]);
   const redoStack = useRef<HistoryCmd[]>([]);
   const spaceNameRef = useRef(spaceName);
+  const canEditRef = useRef(false);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const cursorAt = useRef(0);
 
   useEffect(() => {
     shapesRef.current = shapesById;
     selectedIdRef.current = selectedId;
     spaceNameRef.current = spaceName;
+    canEditRef.current = canEdit;
   });
 
   const syncHistory = () => {
@@ -144,10 +169,11 @@ export default function CanvasPage() {
   };
 
   const writeShape = async (shape: Shape) => {
-    dispatch(upsertShape(shape));
-    const { error } = await supabase
-      .from("shapes")
-      .update({
+    const guard = shapesRef.current[shape.id]?.updatedAt ?? shape.updatedAt;
+    dispatch(upsertShape({ ...shape, updatedAt: guard }));
+    const result = await saveShapeUpdate(
+      shape.id,
+      {
         x: shape.x,
         y: shape.y,
         width: shape.width,
@@ -156,9 +182,20 @@ export default function CanvasPage() {
         props: shape.props ?? {},
         points: shape.points ?? null,
         text_value: shape.text ?? null,
-      })
-      .eq("id", shape.id);
-    if (error) toast.error(error.message || "Could not save shape");
+      },
+      guard
+    );
+    if ("error" in result && result.error) {
+      toast.error(result.error.message || "Could not save shape");
+      return;
+    }
+    if ("conflict" in result) {
+      if (result.conflict) dispatch(upsertShape(result.conflict));
+      else dispatch(removeShape(shape.id));
+      toast.error("Someone else changed this shape");
+      return;
+    }
+    if ("saved" in result && result.saved) dispatch(upsertShape(result.saved));
   };
 
   const persistShape = async (
@@ -168,22 +205,32 @@ export default function CanvasPage() {
     beforeOverride?: Shape
   ) => {
     const current = shapesRef.current[id];
-    if (!current) return;
+    if (!current || !canEditRef.current) return;
     const before = beforeOverride ?? current;
     const after = { ...current, ...patch };
     const changed = !sameShape(before, after);
     const cmd: HistoryCmd = { type: "update", before, after };
     if (changed) pushHistory(cmd);
     dispatch(upsertShape(after));
-    const { error } = await supabase.from("shapes").update(row).eq("id", id);
-    if (error) {
+    const result = await saveShapeUpdate(id, row, before.updatedAt);
+    if ("error" in result && result.error) {
       if (changed) dropHistory(cmd);
       dispatch(upsertShape(before));
-      toast.error(error.message || "Could not save shape");
+      toast.error(result.error.message || "Could not save shape");
+      return;
     }
+    if ("conflict" in result) {
+      if (changed) dropHistory(cmd);
+      if (result.conflict) dispatch(upsertShape(result.conflict));
+      else dispatch(removeShape(id));
+      toast.error("Someone else changed this shape");
+      return;
+    }
+    if ("saved" in result && result.saved) dispatch(upsertShape(result.saved));
   };
 
   const insertShape = async (draft: Shape, keepId: boolean, record: boolean) => {
+    if (!keepId && !canEditRef.current) return null;
     const tempId = keepId ? draft.id : crypto.randomUUID();
     const local = { ...draft, id: tempId };
     dispatch(upsertShape(local));
@@ -206,7 +253,7 @@ export default function CanvasPage() {
 
   const deleteShape = async (id: string, record: boolean) => {
     const current = shapesRef.current[id];
-    if (!current) return false;
+    if (!current || (record && !canEditRef.current)) return false;
     const cmd: HistoryCmd = { type: "remove", shape: current };
     if (record) pushHistory(cmd);
     dispatch(removeShape(id));
@@ -278,7 +325,7 @@ export default function CanvasPage() {
 
   const nudge = (id: string, dx: number, dy: number) => {
     const current = shapesRef.current[id];
-    if (!current || isConnectedArrow(current)) return;
+    if (!current || isConnectedArrow(current) || !canEditRef.current) return;
     void persistShape(id, { x: current.x + dx, y: current.y + dy }, { x: current.x + dx, y: current.y + dy });
   };
 
@@ -342,6 +389,13 @@ export default function CanvasPage() {
     const y = e.target.y();
     if (current.x === x && current.y === y) return;
     dispatch(upsertShape({ ...current, x, y }));
+    const me = user?.id;
+    if (!me) return;
+    void channelRef.current?.send({
+      type: "broadcast",
+      event: "drag",
+      payload: { id, x, y, userId: me },
+    });
   };
 
   const handleDragEnd = (id: string) => async (e: any) => {
@@ -352,7 +406,7 @@ export default function CanvasPage() {
   };
 
   const clearCanvas = async () => {
-    if (!spaceId) return;
+    if (!spaceId || !canEditRef.current) return;
     const removed = Object.values(shapesRef.current).filter((s) => s.spaceId === spaceId);
     if (removed.length === 0) return;
     const cmd: HistoryCmd = { type: "remove-many", shapes: removed };
@@ -370,7 +424,7 @@ export default function CanvasPage() {
 
   const onShapeClick = (id: string) => (e: any) => {
     e.cancelBubble = true;
-    if (tool === "pan") return;
+    if (tool === "pan" || !canEdit) return;
     if (tool === "arrow") {
       if (!connectFrom || connectFrom === id) {
         setConnectFrom(id);
@@ -406,19 +460,43 @@ export default function CanvasPage() {
   };
 
   useEffect(() => {
-    if (!spaceId) return;
-    const fetchSpace = async () => {
-      const { data } = await supabase.from("spaces").select("name").eq("id", spaceId).single();
-      if (data) setSpaceName(data.name);
+    if (!spaceId || !user) return;
+    let gone = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("space_members")
+        .select("role, spaces(name)")
+        .eq("space_id", spaceId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (gone) return;
+      if (error && isMissingRelation(error)) {
+        setRole("owner");
+        const named = await supabase.from("spaces").select("name").eq("id", spaceId).maybeSingle();
+        if (!gone && named.data?.name) setSpaceName(named.data.name);
+        return;
+      }
+      if (error || !data) {
+        setRole("none");
+        return;
+      }
+      const nextRole = data.role as SpaceRole;
+      setRole(nextRole);
+      if (nextRole === "viewer") setTool("pan");
+      const space = data.spaces as { name?: string } | { name?: string }[] | null;
+      const record = Array.isArray(space) ? space[0] : space;
+      if (record?.name) setSpaceName(record.name);
+    })();
+    return () => {
+      gone = true;
     };
-    fetchSpace();
-  }, [spaceId]);
+  }, [spaceId, user]);
 
   useEffect(() => {
     if (containerRef.current) {
       gsap.fromTo(containerRef.current, { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.4 });
     }
-  }, []);
+  }, [role]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -434,10 +512,10 @@ export default function CanvasPage() {
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [role]);
 
   useEffect(() => {
-    if (!spaceId) return;
+    if (!spaceId || !user || role === "loading" || role === "none") return;
 
     const loadShapes = async () => {
       const { data, error } = await supabase.from("shapes").select("*").eq("space_id", spaceId);
@@ -450,8 +528,14 @@ export default function CanvasPage() {
 
     loadShapes();
 
-    const channel = supabase
-      .channel(`space:${spaceId}`)
+    const name = displayName(user);
+    const color = colorFor(user.id);
+    const channel = supabase.channel(`space:${spaceId}`, {
+      config: { presence: { key: user.id } },
+    });
+    channelRef.current = channel;
+
+    channel
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "shapes", filter: `space_id=eq.${spaceId}` },
@@ -465,17 +549,58 @@ export default function CanvasPage() {
           }
         }
       )
-      .subscribe();
+      .on("broadcast", { event: "cursor" }, ({ payload }) => {
+        if (!payload || payload.userId === user.id) return;
+        setCursors((current) => ({
+          ...current,
+          [payload.userId]: {
+            x: payload.x,
+            y: payload.y,
+            name: payload.name,
+            color: payload.color,
+          },
+        }));
+      })
+      .on("broadcast", { event: "drag" }, ({ payload }) => {
+        if (!payload || payload.userId === user.id) return;
+        const current = shapesRef.current[payload.id];
+        if (!current) return;
+        dispatch(upsertShape({ ...current, x: payload.x, y: payload.y }));
+      })
+      .on("presence", { event: "sync" }, () => {
+        const state = channel.presenceState<{ name: string; color: string }>();
+        setPeers(
+          Object.entries(state)
+            .filter(([id]) => id !== user.id)
+            .map(([id, metas]) => ({
+              id,
+              name: metas[0]?.name || "Someone",
+              color: metas[0]?.color || colorFor(id),
+            }))
+        );
+      })
+      .on("presence", { event: "leave" }, ({ key }) => {
+        setCursors((current) => {
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
+      })
+      .subscribe(async (status) => {
+        if (status === "SUBSCRIBED") await channel.track({ name, color });
+      });
 
     return () => {
+      channelRef.current = null;
       supabase.removeChannel(channel);
     };
-  }, [spaceId, dispatch]);
+  }, [spaceId, dispatch, user, role]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
+      if (!canEdit) return;
       const meta = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
 
@@ -545,7 +670,7 @@ export default function CanvasPage() {
   };
 
   const handleCanvasClick = async (evt: any) => {
-    if (!spaceId || tool === "pan") return;
+    if (!spaceId || tool === "pan" || !canEdit) return;
     const stage = evt.target.getStage();
     if (!stage || evt.target !== stage) return;
     const pos = canvasPointer(stage);
@@ -571,7 +696,7 @@ export default function CanvasPage() {
       base.height = 70;
     } else if (tool === "circle") {
       base.width = 80;
-      base.height = 70;
+      base.height = 80;
     } else if (tool === "line") {
       base.points = [0, 0, 100, 0];
     } else if (tool === "arrow") {
@@ -587,7 +712,45 @@ export default function CanvasPage() {
   };
 
   const lines = gridLines(viewport, stageSize.width, stageSize.height);
-  const draggable = tool !== "pan";
+  const draggable = tool !== "pan" && canEdit;
+
+  const publishCursor = (event: any) => {
+    if (!user) return;
+    const now = performance.now();
+    if (now - cursorAt.current < 40) return;
+    cursorAt.current = now;
+    const pos = canvasPointer(event.target.getStage());
+    if (!pos) return;
+    void channelRef.current?.send({
+      type: "broadcast",
+      event: "cursor",
+      payload: {
+        x: pos.x,
+        y: pos.y,
+        name: displayName(user),
+        color: colorFor(user.id),
+        userId: user.id,
+      },
+    });
+  };
+
+  if (role === "loading" || role === "none") {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center gap-4 bg-white text-gray-900">
+        <p className="text-lg font-medium">
+          {role === "loading" ? "Opening space..." : "You don't have access to this space."}
+        </p>
+        {role === "none" && (
+          <button
+            onClick={() => navigate("/spaces")}
+            className="px-4 py-2 border-2 border-gray-900 rounded-xl font-semibold"
+          >
+            Back to spaces
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen w-full flex flex-col bg-white">
@@ -615,6 +778,7 @@ export default function CanvasPage() {
         canUndo={canUndo}
         canRedo={canRedo}
         canDuplicate={Boolean(selectedShape)}
+        canEdit={canEdit}
       />
 
       <div className="fixed top-4 left-4 z-40">
@@ -631,6 +795,11 @@ export default function CanvasPage() {
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white border-2 border-gray-900 shadow-lg">
           <Users className="w-4 h-4 text-gray-700" />
           <span className="text-sm font-semibold text-gray-900 google-sans">{spaceName || "Space"}</span>
+          {peers.map((peer) => (
+            <span key={peer.id} className="text-xs font-semibold" style={{ color: peer.color }}>
+              {peer.name}
+            </span>
+          ))}
         </div>
       </div>
 
@@ -649,6 +818,7 @@ export default function CanvasPage() {
           }}
           onWheel={handleWheel}
           onMouseDown={handleCanvasClick}
+          onMouseMove={publishCursor}
           className="bg-white"
         >
           <Layer ref={layerRef}>
@@ -796,11 +966,23 @@ export default function CanvasPage() {
               }
             })}
             <Transformer ref={transformerRef} />
+            {Object.entries(cursors).map(([id, cursor]) => (
+              <Group key={id} x={cursor.x} y={cursor.y} listening={false}>
+                <Circle radius={5 / viewport.scale} fill={cursor.color} />
+                <Text
+                  x={8 / viewport.scale}
+                  y={-6 / viewport.scale}
+                  text={cursor.name}
+                  fontSize={12 / viewport.scale}
+                  fill={cursor.color}
+                />
+              </Group>
+            ))}
           </Layer>
         </Stage>
       </div>
 
-      {selectedShape && (
+      {canEdit && selectedShape && (
         <Inspector
           shape={selectedShape}
           onPatch={(patch, row) => void persistShape(selectedShape.id, patch, row)}
