@@ -15,6 +15,7 @@ export type Shape = {
   points?:number[],
   text?:string,
   props?: Record<string, any>;
+  updatedAt?: string;
 };
 
 type CanvasState = {

@@ -27,6 +27,7 @@ type ToolbarProps = {
   canUndo: boolean;
   canRedo: boolean;
   canDuplicate: boolean;
+  canEdit: boolean;
 };
 
 export default function Toolbar({
@@ -40,6 +41,7 @@ export default function Toolbar({
   canUndo,
   canRedo,
   canDuplicate,
+  canEdit,
 }: ToolbarProps) {
   const buttons: { id: CanvasTool; label: string; icon: ReactNode }[] = [
     { id: "pan", label: "Pan", icon: <Hand className="w-4 h-4" /> },
@@ -57,10 +59,11 @@ export default function Toolbar({
           <button
             key={b.id}
             onClick={() => setTool(b.id)}
-            className={`group relative px-4 py-3 rounded-xl transition-all duration-200 ${
+            className={`group relative px-4 py-3 rounded-xl transition-all duration-200 disabled:opacity-40 ${
               tool === b.id ? "bg-gray-900 text-white" : "bg-white text-gray-700 hover:bg-gray-100"
             }`}
             title={b.label}
+            disabled={!canEdit && b.id !== "pan"}
           >
             {b.icon}
             <span className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
@@ -71,13 +74,13 @@ export default function Toolbar({
 
         <div className="w-px h-8 bg-gray-300 mx-1" />
 
-        <IconButton label="Undo" onClick={undo} disabled={!canUndo}>
+        <IconButton label="Undo" onClick={undo} disabled={!canUndo || !canEdit}>
           <Undo2 className="w-4 h-4" />
         </IconButton>
-        <IconButton label="Redo" onClick={redo} disabled={!canRedo}>
+        <IconButton label="Redo" onClick={redo} disabled={!canRedo || !canEdit}>
           <Redo2 className="w-4 h-4" />
         </IconButton>
-        <IconButton label="Duplicate" onClick={duplicate} disabled={!canDuplicate}>
+        <IconButton label="Duplicate" onClick={duplicate} disabled={!canDuplicate || !canEdit}>
           <Copy className="w-4 h-4" />
         </IconButton>
         <IconButton label="Export PNG" onClick={exportPng}>
@@ -88,7 +91,8 @@ export default function Toolbar({
 
         <button
           onClick={clearCanvas}
-          className="px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all duration-200 group relative"
+          disabled={!canEdit}
+          className="px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 transition-all duration-200 group relative disabled:opacity-40"
           title="Clear Canvas"
         >
           <Trash2 className="w-4 h-4" />

@@ -1,17 +1,23 @@
 import { Mail } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supaBaseClient';
 import { toast, ToastContainer } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { useAppSelector } from '../app/store';
+import { consumeInvitePath } from '../lib/sharing';
 
 export default function LoginPage() {
   const [emailMode, setEmailMode] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const user = useAppSelector(s => s.auth.user);
   const navigate = useNavigate();
+  const sent = useRef(false);
 
-  if (user) navigate("/spaces");
+  useEffect(() => {
+    if (!user || sent.current) return;
+    sent.current = true;
+    navigate(consumeInvitePath() ?? "/spaces");
+  }, [user, navigate]);
 
   async function loginWithGithub() {
     const { error } = await supabase.auth.signInWithOAuth({
